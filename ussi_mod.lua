@@ -117,6 +117,17 @@ local function GenerateAnnotation(functions)
     return table.concat(lines, "\n")
 end
 
+local function FindLatestRbxlx()
+    local files = listfiles("")
+    local latest = nil
+    for _, f in ipairs(files) do
+        if string.sub(f, -6) == ".rbxlx" then
+            latest = f
+        end
+    end
+    return latest
+end
+
 local ussiSource = game:HttpGet("https://raw.githubusercontent.com/luau/UniversalSynSaveInstance/main/saveinstance.luau", true)
 ussiSource = ussiSource:gsub("UniversalSynSaveInstance https://discord%.gg/%S+", "")
 ussiSource = ussiSource:gsub("%-%- Decompiled with[^\n]*\n", "")
@@ -126,40 +137,31 @@ return function(Options, ...)
     Options = Options or {}
     if Options.Decompile == nil then Options.Decompile = true end
 
-    local filePath = (Options.FilePath or "game") .. ".rbxlx"
-
     synsaveinstance_original(Options, ...)
 
-    -- Después del save parchea el rbxlx
     task.wait(1)
-    if not isfile(filePath) then
-        print("[MOD] Archivo no encontrado: " .. filePath)
+
+    local filePath = FindLatestRbxlx()
+    if not filePath then
+        print("[MOD] No se encontró ningún .rbxlx")
         return
     end
 
-    print("[MOD] Inyectando dump en " .. filePath)
+    print("[MOD] Parcheando: " .. filePath)
     local content = readfile(filePath)
 
     content = content:gsub(
-        '(<Item class="LocalScript" referent=".-">.-<Properties>.-<string name="Name">(.-)</string>.-<ProtectedString name="Source"><!\[CDATA\[)(.-)(]\]></ProtectedString>)',
-        function(header, scriptName, src)
+        '(<string name="Name">)(.-)(</string>)(.-<ProtectedString name="Source"><!\[CDATA\[)(.-)(]\]></ProtectedString>)',
+        function(nameOpen, scriptName, nameClose, middle, src)
             FunctionCache = {}
             local funcs = GetScriptFunctions(scriptName)
             local annotation = GenerateAnnotation(funcs)
-            return header .. annotation .. src .. "]]></ProtectedString>"
-        end
-    )
-
-    content = content:gsub(
-        '(<Item class="Script" referent=".-">.-<Properties>.-<string name="Name">(.-)</string>.-<ProtectedString name="Source"><!\[CDATA\[)(.-)(]\]></ProtectedString>)',
-        function(header, scriptName, src)
-            FunctionCache = {}
-            local funcs = GetScriptFunctions(scriptName)
-            local annotation = GenerateAnnotation(funcs)
-            return header .. annotation .. src .. "]]></ProtectedString>"
+            src = src:gsub("%-%- Decompiled with[^\n]*\n", "")
+            src = src:gsub("UniversalSynSaveInstance https://discord%.gg/%S+[^\n]*\n?", "")
+            return nameOpen .. scriptName .. nameClose .. middle .. "<![CDATA[" .. annotation .. src .. "]]></ProtectedString>"
         end
     )
 
     writefile(filePath, content)
-    print("[MOD] Listo.")
+    print("[MOD] Listo — " .. filePath)
 end
