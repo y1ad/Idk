@@ -162,6 +162,13 @@ local synsaveinstance_original = loadstring(ussiSource, "saveinstance")()
 
 local dumper = ScriptDumper.new()
 
+local function CleanSource(source)
+    if type(source) ~= "string" then return source end
+    source = source:gsub("%-%- Decompiled with[^\n]*\n", "")
+    source = source:gsub("UniversalSynSaveInstance https://discord%.gg/%S+[^\n]*\n?", "")
+    return source
+end
+
 local function synsaveinstance_modded(Options, ...)
     Options = Options or {}
 
@@ -172,11 +179,9 @@ local function synsaveinstance_modded(Options, ...)
     local userCallback = Options.Callback
 
     Options.Callback = function(scriptInstance, source)
-        local annotated = (source or "")
-            :gsub("%-%- Decompiled with[^\n]*\n", "")
-            :gsub("UniversalSynSaveInstance https://discord%.gg/%S+[^\n]*\n?", "")
+        local annotated = CleanSource(source)
 
-        if Options.Decompile and annotated ~= "" and not string.find(annotated, "-- Decompilation failed", 1, true) then
+        if type(annotated) == "string" and Options.Decompile and annotated ~= "" and not string.find(annotated, "-- Decompilation failed", 1, true) then
             local scriptName = ""
             SafeCall(function() scriptName = scriptInstance.Name end)
 
