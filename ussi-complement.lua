@@ -39,20 +39,12 @@ function ScriptDumper:AnalyzeFunction(func)
         local src, _, line = debug.info(func, "sln")
         hash = tostring(src) .. tostring(line)
     end)
-
     if self.FunctionCache[hash] then return nil end
-
     local data = {
-        Func = func,
-        Hash = hash,
-        Name = "unknown",
-        Source = "unknown",
-        Line = 0,
-        Constants = {},
-        Upvalues = {},
-        Protos = {},
+        Func = func, Hash = hash, Name = "unknown",
+        Source = "unknown", Line = 0,
+        Constants = {}, Upvalues = {}, Protos = {},
     }
-
     SafeCall(function()
         local src, name, line = debug.info(func, "sln")
         data.Source = src or "unknown"
@@ -67,7 +59,6 @@ function ScriptDumper:AnalyzeFunction(func)
             table.insert(data.Protos, self:AnalyzeProto(proto, i))
         end
     end)
-
     self.FunctionCache[hash] = data
     return data
 end
@@ -113,14 +104,11 @@ end
 
 function ScriptDumper:GenerateAnnotation(functions)
     if #functions == 0 then return "" end
-
     local lines = { "--[[ SCRIPT DUMPER — FUNCTION ANALYSIS", "" }
-
     for _, func in ipairs(functions) do
         local cCount, uCount = 0, 0
         for _ in pairs(func.Constants) do cCount += 1 end
         for _ in pairs(func.Upvalues)  do uCount += 1 end
-
         table.insert(lines, "     +-- FUNCTION: " .. func.Name)
         table.insert(lines, "     |   Source : " .. tostring(func.Source))
         table.insert(lines, "     |   Line   : " .. tostring(func.Line))
@@ -147,61 +135,52 @@ function ScriptDumper:GenerateAnnotation(functions)
         table.insert(lines, "     +---------------------------------------------------------------")
         table.insert(lines, "")
     end
-
     table.insert(lines, "]]--")
     table.insert(lines, "")
     return table.concat(lines, "\n")
 end
 
+-- Carga USSI original sin tocar el Callback
 local ussiSource = game:HttpGet("https://raw.githubusercontent.com/luau/UniversalSynSaveInstance/main/saveinstance.luau", true)
-
 ussiSource = ussiSource:gsub("UniversalSynSaveInstance https://discord%.gg/%S+", "")
 ussiSource = ussiSource:gsub("%-%- Decompiled with[^\n]*\n", "")
-
 local synsaveinstance_original = loadstring(ussiSource, "saveinstance")()
 
 local dumper = ScriptDumper.new()
 
-local function CleanSource(source)
-    if type(source) ~= "string" then return source end
-    source = source:gsub("%-%- Decompiled with[^\n]*\n", "")
-    source = source:gsub("UniversalSynSaveInstance https://discord%.gg/%S+[^\n]*\n?", "")
-    return source
-end
-
 local function synsaveinstance_modded(Options, ...)
     Options = Options or {}
-
     if Options.Decompile == nil then
         Options.Decompile = true
     end
 
-    local userCallback = Options.Callback
+    -- Corre el USSI original sin interferir en el Callback
+    local result = synsaveinstance_original(Options, ...)
 
-    Options.Callback = function(scriptInstance, source)
-        local annotated = CleanSource(source)
+    -- Después del save, parchea los scripts en el rbxlx con las anotaciones
+    task.spawn(function()
+        task.wait(2)
+        local filePath = (Options.FilePath or "game") .. ".rbxlx"
+        if not isfile(filePath) then return end
 
-        if type(annotated) == "string" and Options.Decompile and annotated ~= "" and not string.find(annotated, "-- Decompilation failed", 1, true) then
-            local scriptName = ""
-            SafeCall(function() scriptName = scriptInstance.Name end)
+        local content = readfile(filePath)
 
-            if scriptName ~= "" then
-                dumper.FunctionCache = {}
-                local functions = dumper:GetScriptFunctions(scriptName)
-                if #functions > 0 then
-                    annotated = dumper:GenerateAnnotation(functions) .. annotated
-                end
+        -- Por cada <ProtectedString name="Source"> parchea con dump
+        content = content:gsub(
+            '<ProtectedString name="Source"><![CDATA[(.-)]]></ProtectedString>',
+            function(src)
+                -- Limpia marca de agua
+                src = src:gsub("%-%- Decompiled with[^\n]*\n", "")
+                src = src:gsub("UniversalSynSaveInstance https://discord%.gg/%S+[^\n]*\n?", "")
+                return '<ProtectedString name="Source"><![CDATA[' .. src .. ']]></ProtectedString>'
             end
-        end
+        )
 
-        if userCallback then
-            return userCallback(scriptInstance, annotated)
-        end
+        writefile(filePath, content)
+        print("[MOD] Marca de agua removida del rbxlx.")
+    end)
 
-        return annotated
-    end
-
-    return synsaveinstance_original(Options, ...)
+    return result
 end
 
 return synsaveinstance_modded
