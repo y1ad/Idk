@@ -121,7 +121,8 @@ local function FindLatestRbxlx()
     local files = listfiles("")
     local latest = nil
     for _, f in ipairs(files) do
-        if string.sub(f, -6) == ".rbxlx" then
+        local ext = string.sub(f, -6)
+        if ext == ".rbxlx" or ext == ".rbxmx" or string.sub(f, -5) == ".rbxl" then
             latest = f
         end
     end
